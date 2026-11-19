@@ -44,6 +44,16 @@ if ($dbUrl !== '') {
         $dbStatus = 'Ekstensi pdo_pgsql tidak aktif di runtime PHP.';
     }
 }
+$stmt = $pdo->query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name");
+$tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+echo '<p><strong>Jumlah Tabel di Neon:</strong> ' . count($tables) . '</p>';
+if ($tables) {
+    echo '<ul>';
+    foreach ($tables as $t) {
+        echo '<li>' . htmlspecialchars($t, ENT_QUOTES, 'UTF-8') . '</li>';
+    }
+    echo '</ul>';
+}
 
 echo '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>App Absensi</title></head><body>';
 echo '<h2>Status Aplikasi Absensi (Vercel)</h2>';
