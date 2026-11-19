@@ -116,17 +116,43 @@ if (is_file($appFile)) {
     require $appFile;
     $buffered = ob_get_clean();
 
-    // Jika app.php menghasilkan output, tampilkan
+    // Jika app.php menghasilkan output langsung, tampilkan
     if ($buffered !== false && trim($buffered) !== '') {
         echo $buffered;
         exit;
     }
 
-    // Jika app.php keluar tanpa output (mis. blank karena parameter query), tampilkan info ringkas agar tidak blank
-    echo '<div style="font-family:sans-serif;padding:24px;">';
-    echo '<h3>Aplikasi berjalan, tetapi tidak ada output tampilan untuk route/parameter ini.</h3>';
-    echo '<p>Query saat ini: <code>' . htmlspecialchars($_SERVER['QUERY_STRING'] ?? '-') . '</code></p>';
-    echo '<p><a href="/">Kembali ke halaman utama (/)</a></p>';
+    // Coba panggil controller umum jika ada
+    foreach (['AuthController', 'AbsensiController', 'DashboardController', 'HomeController'] as $ctrl) {
+        if (class_exists($ctrl)) {
+            $instance = new $ctrl();
+            foreach (['index', 'login', 'dashboard', 'home'] as $method) {
+                if (method_exists($instance, $method)) {
+                    ob_start();
+                    $instance->$method();
+                    $out = ob_get_clean();
+                    if ($out !== false && trim($out) !== '') {
+                        echo $out;
+                        exit;
+                    }
+                }
+            }
+        }
+    }
+
+    // Jika tetap kosong, tampilkan file PHP & class yang terdeteksi agar bisa langsung dihubungkan
+    $phpFiles = array_map('basename', glob($rootDir . '/*.php') ?: []);
+    $declaredClasses = get_declared_classes();
+    $userClasses = array_slice($declaredClasses, -15);
+
+    http_response_code(200);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<div style="font-family:sans-serif;padding:24px;max-width:780px;">';
+    echo '<h3>app.php dimuat, tetapi belum mencetak tampilan HTML.</h3>';
+    echo '<p><strong>Query saat ini:</strong> <code>' . htmlspecialchars($_SERVER['QUERY_STRING'] ?? '-') . '</code></p>';
+    echo '<p><strong>File PHP di root:</strong> <code>' . htmlspecialchars(implode(', ', $phpFiles)) . '</code></p>';
+    echo '<p><strong>Class terdeteksi (terbaru):</strong> <code>' . htmlspecialchars(implode(', ', $userClasses)) . '</code></p>';
+    echo '<p>Kirimkan tangkapan layar info ini (atau isi beberapa baris awal/akhir <code>app.php</code>) agar kita panggil tampilan utamanya.</p>';
     echo '</div>';
     exit;
 }
