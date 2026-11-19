@@ -28,7 +28,7 @@ if (!function_exists('env')) {
                 return $default;
             }
         }
-        if (!function_exists('view')) {
+   if (!function_exists('view')) {
     function view(?string $name = null, array $data = [], array $mergeData = [])
     {
         $rootDir = dirname(__DIR__);
@@ -38,6 +38,74 @@ if (!function_exists('env')) {
             return $merged;
         }
 
+        $cleanName = str_replace(['.', '/'], '-', trim($name));
+        $candidates = [
+            $rootDir . '/' . $cleanName . '.blade.php',
+            $rootDir . '/' . str_replace('.', '/', trim($name)) . '.blade.php',
+            $rootDir . '/' . basename($cleanName) . '-index.blade.php',
+            $rootDir . '/' . basename($cleanName) . '-login.blade.php',
+            $rootDir . '/' . $cleanName . '.php',
+        ];
+
+        $targetFile = null;
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate)) {
+                $targetFile = $candidate;
+                break;
+            }
+        }
+
+        if ($targetFile === null) {
+            throw new RuntimeException("View '{$name}' tidak ditemukan di root repository.");
+        }
+
+        $raw = file_get_contents($targetFile);
+        if ($raw === false) {
+            throw new RuntimeException("Gagal membaca file view: {$targetFile}");
+        }
+
+        extract($merged, EXTR_SKIP);
+
+        $php = $raw;
+        // Hapus komentar Blade {{ ... }}
+        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
+        // Form helper Blade
+        $php = preg_replace('/@csrf\b/i', '<input type="hidden" name="_token" value="">', $php);
+        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
+
+        // Tangani @error / @enderror agar tidak meninggalkan ':' yang invalid
+        $php = preg_replace_callback('/@error\s*\(\s*[\'"](.+?)[\'"]\s*\)(.*?)@enderror/is', function ($m) {
+            return '<?php if (false): ?>' . $m[2] . '<?php endif; ?>';
+        }, $php);
+
+        // Tangani struktur kontrol umum
+        $php = preg_replace('/@elseif\b([^\r\n]*)/i', '<?php elseif$1: ?>', $php);
+        $php = preg_replace('/@if\b([^\r\n]*)/i', '<?php if$1: ?>', $php);
+        $php = preg_replace('/@else\b/i', '<?php else: ?>', $php);
+        $php = preg_replace('/@endif\b/i', '<?php endif; ?>', $php);
+        $php = preg_replace('/@foreach\b([^\r\n]*)/i', '<?php foreach$1: ?>', $php);
+        $php = preg_replace('/@endforeach\b/i', '<?php endforeach; ?>', $php);
+
+        // Bersihkan sisa direktif @lainnya agar tidak memicu syntax error di PHP
+        $php = preg_replace('/@[a-zA-Z0-9_:-]+(?:\s*\([^\r\n]*\))?/m', '', $php);
+
+        // Echo Blade
+        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
+        $php = preg_replace_callback('/\{\{\s*(.+?)\s*\}\}/s', function ($m) {
+            $expr = $m[1];
+            return '<?php echo htmlspecialchars((string) (' . $expr . '), ENT_QUOTES, \'UTF-8\'); ?>';
+        }, $php);
+
+        $tmpFile = sys_get_temp_dir() . '/blade_' . md5($targetFile . '_' . $php) . '.php';
+        file_put_contents($tmpFile, $php);
+
+        ob_start();
+        require $tmpFile;
+        $html = ob_get_clean();
+        echo $html;
+        return $html;
+    }
+}
         $cleanName = str_replace(['.', '/'], '-', trim($name));
         $candidates = [
             $rootDir . '/' . $cleanName . '.blade.php',
