@@ -6,6 +6,9 @@ ini_set('display_errors', '1');
 ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
 
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
 ob_start();
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -14,7 +17,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 $rootDir = dirname(__DIR__);
 
-// 1. Helper env() jika belum ada
+// 1. Helper env()
 if (!function_exists('env')) {
     function env(string $key, mixed $default = null): mixed
     {
@@ -28,208 +31,6 @@ if (!function_exists('env')) {
                 return $default;
             }
         }
-  if (!function_exists('view')) {
-    function view(?string $name = null, array $data = [], array $mergeData = [])
-    {
-        $rootDir = dirname(__DIR__);
-        $merged = array_merge($data, $mergeData);
-
-        if ($name === null) {
-            return $merged;
-        }
-
-        $cleanName = str_replace(['.', '/'], '-', trim($name));
-        $candidates = [
-            $rootDir . '/' . $cleanName . '.blade.php',
-            $rootDir . '/' . str_replace('.', '/', trim($name)) . '.blade.php',
-            $rootDir . '/' . basename($cleanName) . '-index.blade.php',
-            $rootDir . '/' . basename($cleanName) . '-login.blade.php',
-            $rootDir . '/' . $cleanName . '.php',
-        ];
-
-        $targetFile = null;
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                $targetFile = $candidate;
-                break;
-            }
-        }
-
-        if ($targetFile === null) {
-            $msg = "View '{$name}' tidak ditemukan di root repository.";
-            echo $msg;
-            return $msg;
-        }
-
-        $raw = file_get_contents($targetFile);
-        if ($raw === false) {
-            $msg = "Gagal membaca file view: {$targetFile}";
-            echo $msg;
-            return $msg;
-        }
-
-        extract($merged, EXTR_SKIP);
-
-        $php = $raw;
-        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
-        $php = preg_replace('/@csrf\b/i', '<input type="hidden" name="_token" value="">', $php);
-        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
-        $php = preg_replace_callback('/@error\s*\(\s*[\'"](.+?)[\'"]\s*\)(.*?)@enderror/is', function ($m) {
-            return '<?php if (false): ?>' . $m[2] . '<?php endif; ?>';
-        }, $php);
-        $php = preg_replace('/@elseif\b([^\r\n]*)/i', '<?php elseif$1: ?>', $php);
-        $php = preg_replace('/@if\b([^\r\n]*)/i', '<?php if$1: ?>', $php);
-        $php = preg_replace('/@else\b/i', '<?php else: ?>', $php);
-        $php = preg_replace('/@endif\b/i', '<?php endif; ?>', $php);
-        $php = preg_replace('/@foreach\b([^\r\n]*)/i', '<?php foreach$1: ?>', $php);
-        $php = preg_replace('/@endforeach\b/i', '<?php endforeach; ?>', $php);
-        $php = preg_replace('/@[a-zA-Z0-9_:-]+(?:\s*\([^\r\n]*\))?/m', '', $php);
-        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
-        $php = preg_replace_callback('/\{\{\s*(.+?)\s*\}\}/s', function ($m) {
-            $expr = $m[1];
-            return '<?php echo htmlspecialchars((string) (' . $expr . '), ENT_QUOTES, \'UTF-8\'); ?>';
-        }, $php);
-
-        $tmpFile = sys_get_temp_dir() . '/blade_' . md5($targetFile . '_' . $php) . '.php';
-        file_put_contents($tmpFile, $php);
-
-        ob_start();
-        require $tmpFile;
-        $html = (string) ob_get_clean();
-
-        // Fallback jika hasil compile kosong agar tidak Content-Length: 0
-        if (trim($html) === '') {
-            $html = $raw;
-        }
-
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-
-        header('Content-Type: text/html; charset=utf-8');
-        echo $html;
-        return $html;
-    }
-}
-        $cleanName = str_replace(['.', '/'], '-', trim($name));
-        $candidates = [
-            $rootDir . '/' . $cleanName . '.blade.php',
-            $rootDir . '/' . str_replace('.', '/', trim($name)) . '.blade.php',
-            $rootDir . '/' . basename($cleanName) . '-index.blade.php',
-            $rootDir . '/' . basename($cleanName) . '-login.blade.php',
-            $rootDir . '/' . $cleanName . '.php',
-        ];
-
-        $targetFile = null;
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                $targetFile = $candidate;
-                break;
-            }
-        }
-
-        if ($targetFile === null) {
-            throw new RuntimeException("View '{$name}' tidak ditemukan di root repository.");
-        }
-
-        $raw = file_get_contents($targetFile);
-        if ($raw === false) {
-            throw new RuntimeException("Gagal membaca file view: {$targetFile}");
-        }
-
-        extract($merged, EXTR_SKIP);
-
-        $php = $raw;
-        // Hapus komentar Blade {{ ... }}
-        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
-        // Form helper Blade
-        $php = preg_replace('/@csrf\b/i', '<input type="hidden" name="_token" value="">', $php);
-        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
-
-        // Tangani @error / @enderror agar tidak meninggalkan ':' yang invalid
-        $php = preg_replace_callback('/@error\s*\(\s*[\'"](.+?)[\'"]\s*\)(.*?)@enderror/is', function ($m) {
-            return '<?php if (false): ?>' . $m[2] . '<?php endif; ?>';
-        }, $php);
-
-        // Tangani struktur kontrol umum
-        $php = preg_replace('/@elseif\b([^\r\n]*)/i', '<?php elseif$1: ?>', $php);
-        $php = preg_replace('/@if\b([^\r\n]*)/i', '<?php if$1: ?>', $php);
-        $php = preg_replace('/@else\b/i', '<?php else: ?>', $php);
-        $php = preg_replace('/@endif\b/i', '<?php endif; ?>', $php);
-        $php = preg_replace('/@foreach\b([^\r\n]*)/i', '<?php foreach$1: ?>', $php);
-        $php = preg_replace('/@endforeach\b/i', '<?php endforeach; ?>', $php);
-
-        // Bersihkan sisa direktif @lainnya agar tidak memicu syntax error di PHP
-        $php = preg_replace('/@[a-zA-Z0-9_:-]+(?:\s*\([^\r\n]*\))?/m', '', $php);
-
-        // Echo Blade
-        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
-        $php = preg_replace_callback('/\{\{\s*(.+?)\s*\}\}/s', function ($m) {
-            $expr = $m[1];
-            return '<?php echo htmlspecialchars((string) (' . $expr . '), ENT_QUOTES, \'UTF-8\'); ?>';
-        }, $php);
-
-        $tmpFile = sys_get_temp_dir() . '/blade_' . md5($targetFile . '_' . $php) . '.php';
-        file_put_contents($tmpFile, $php);
-
-        ob_start();
-        require $tmpFile;
-        $html = ob_get_clean();
-        echo $html;
-        return $html;
-    }
-}
-        $cleanName = str_replace(['.', '/'], '-', trim($name));
-        $candidates = [
-            $rootDir . '/' . $cleanName . '.blade.php',
-            $rootDir . '/' . str_replace('.', '/', trim($name)) . '.blade.php',
-            $rootDir . '/' . basename($cleanName) . '-index.blade.php',
-            $rootDir . '/' . basename($cleanName) . '-login.blade.php',
-            $rootDir . '/' . $cleanName . '.php',
-        ];
-
-        $targetFile = null;
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate)) {
-                $targetFile = $candidate;
-                break;
-            }
-        }
-
-        if ($targetFile === null) {
-            throw new RuntimeException("View '{$name}' tidak ditemukan di root repository.");
-        }
-
-        $raw = file_get_contents($targetFile);
-        if ($raw === false) {
-            throw new RuntimeException("Gagal membaca file view: {$targetFile}");
-        }
-
-        extract($merged, EXTR_SKIP);
-
-        $php = $raw;
-        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
-        $php = preg_replace('/@csrf/i', '<input type="hidden" name="_token" value="">', $php);
-        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
-        $php = preg_replace('/@if\s*\((.+?)\)/', '<?php if ($1): ?>', $php);
-        $php = preg_replace('/@elseif\s*\((.+?)\)/', '<?php elseif ($1): ?>', $php);
-        $php = preg_replace('/@else/i', '<?php else: ?>', $php);
-        $php = preg_replace('/@endif/i', '<?php endif; ?>', $php);
-        $php = preg_replace('/@foreach\s*\((.+?)\)/', '<?php foreach ($1): ?>', $php);
-        $php = preg_replace('/@endforeach/i', '<?php endforeach; ?>', $php);
-        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
-        $php = preg_replace('/\{\{\s*(.+?)\s*\}\}/s', '<?php echo htmlspecialchars((string) ($1), ENT_QUOTES, \'UTF-8\'); ?>', $php);
-
-        $tmpFile = sys_get_temp_dir() . '/blade_' . md5($targetFile) . '.php';
-        file_put_contents($tmpFile, $php);
-
-        ob_start();
-        require $tmpFile;
-        $html = ob_get_clean();
-        echo $html;
-        return $html;
-    }
-}
 
         if (is_string($value)) {
             return match (strtolower($value)) {
@@ -245,7 +46,88 @@ if (!function_exists('env')) {
     }
 }
 
-// 2. Muat file konfigurasi / .env jika ada
+// 2. Helper render Blade/PHP menjadi string HTML
+if (!function_exists('render_blade_html')) {
+    function render_blade_html(string $name, array $data = [], array $mergeData = []): string
+    {
+        $rootDir = dirname(__DIR__);
+        $merged = array_merge($data, $mergeData);
+        $cleanName = str_replace(['.', '/'], '-', trim($name));
+
+        $candidates = [
+            $rootDir . '/' . $cleanName . '.blade.php',
+            $rootDir . '/' . str_replace('.', '/', trim($name)) . '.blade.php',
+            $rootDir . '/' . basename($cleanName) . '-index.blade.php',
+            $rootDir . '/' . basename($cleanName) . '-login.blade.php',
+            $rootDir . '/' . $cleanName . '.php',
+        ];
+
+        $targetFile = null;
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate)) {
+                $targetFile = $candidate;
+                break;
+            }
+        }
+
+        if ($targetFile === null) {
+            return '<p>View <code>' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '</code> tidak ditemukan.</p>';
+        }
+
+        $raw = (string) file_get_contents($targetFile);
+        extract($merged, EXTR_SKIP);
+
+        $php = $raw;
+        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
+        $php = preg_replace('/@csrf\b/i', '<input type="hidden" name="_token" value="">', $php);
+        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
+        $php = preg_replace_callback('/@error\s*\(\s*[\'"](.+?)[\'"]\s*\)(.*?)@enderror/is', function ($m) {
+            return '<?php if (false): ?>' . $m[2] . '<?php endif; ?>';
+        }, $php);
+        $php = preg_replace('/@elseif\b([^\r\n]*)/i', '<?php elseif$1: ?>', $php);
+        $php = preg_replace('/@if\b([^\r\n]*)/i', '<?php if$1: ?>', $php);
+        $php = preg_replace('/@else\b/i', '<?php else: ?>', $php);
+        $php = preg_replace('/@endif\b/i', '<?php endif; ?>', $php);
+        $php = preg_replace('/@foreach\b([^\r\n]*)/i', '<?php foreach$1: ?>', $php);
+        $php = preg_replace('/@endforeach\b/i', '<?php endforeach; ?>', $php);
+        $php = preg_replace('/@[a-zA-Z0-9_:-]+(?:\s*\([^\r\n]*\))?/m', '', $php);
+        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
+        $php = preg_replace_callback('/\{\{\s*(.+?)\s*\}\}/s', function ($m) {
+            return '<?php echo htmlspecialchars((string) (' . $m[1] . '), ENT_QUOTES, \'UTF-8\'); ?>';
+        }, $php);
+
+        $tmpFile = sys_get_temp_dir() . '/blade_' . md5($targetFile . '_' . $php) . '.php';
+        file_put_contents($tmpFile, $php);
+
+        ob_start();
+        try {
+            require $tmpFile;
+            $out = (string) ob_get_clean();
+        } catch (Throwable $e) {
+            while (ob_get_level() > 1) {
+                ob_end_clean();
+            }
+            $out = $raw;
+        }
+
+        return trim($out) !== '' ? $out : $raw;
+    }
+}
+
+// 3. Helper global view()
+if (!function_exists('view')) {
+    function view(?string $name = null, array $data = [], array $mergeData = []): mixed
+    {
+        if ($name === null) {
+            return array_merge($data, $mergeData);
+        }
+        $html = render_blade_html($name, $data, $mergeData);
+        echo $html;
+        return $html;
+    }
+}
+
+// 4. Muat konfigurasi / .env jika ada
 foreach ([$rootDir . '/.env', $rootDir . '/env.php', $rootDir . '/config.php'] as $envFile) {
     if (is_file($envFile)) {
         if (str_ends_with($envFile, '.php')) {
@@ -266,10 +148,11 @@ foreach ([$rootDir . '/.env', $rootDir . '/env.php', $rootDir . '/config.php'] a
     }
 }
 
-// 3. Autoloader untuk class di root repository
+// 5. Autoloader untuk class di root / subfolder
 spl_autoload_register(function (string $class) use ($rootDir): void {
     $shortName = basename(str_replace('\\', '/', $class));
     $candidates = [
+        $rootDir . '/' . str_replace('\\', '/', $class) . '.php',
         $rootDir . '/' . $shortName . '.php',
         $rootDir . '/controllers/' . $shortName . '.php',
         $rootDir . '/models/' . $shortName . '.php',
@@ -284,7 +167,7 @@ spl_autoload_register(function (string $class) use ($rootDir): void {
     }
 });
 
-// 4. Tangkap error fatal / uncaught exception agar tidak blank putih
+// 6. Handler exception & fatal error
 set_exception_handler(function (Throwable $e): void {
     while (ob_get_level() > 0) {
         ob_end_clean();
@@ -298,7 +181,7 @@ set_exception_handler(function (Throwable $e): void {
     exit;
 });
 
-register_shutdown_function(function (): void {
+register_shutdown_function(function () use ($rootDir): void {
     $err = error_get_last();
     if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
         while (ob_get_level() > 0) {
@@ -309,106 +192,61 @@ register_shutdown_function(function (): void {
         echo '<h3>Fatal Error</h3>';
         echo '<p><strong>Pesan:</strong> ' . htmlspecialchars($err['message']) . '</p>';
         echo '<p><strong>File:</strong> ' . htmlspecialchars($err['file']) . ':' . (int) $err['line'] . '</p>';
-    }
-});
-
-// 5. Jalankan app.php jika ada
-$appFile = $rootDir . '/app.php';
-if (is_file($appFile)) {
-    require $appFile;
-    $buffered = ob_get_clean();
-
-    if ($buffered !== false && trim($buffered) !== '') {
-        echo $buffered;
-        exit;
+        return;
     }
 
-    // Helper render file *.blade.php sederhana tanpa vendor Laravel
-    $renderBlade = function (string $bladeFile, array $data = []) use ($rootDir): bool {
-        if (!is_file($bladeFile)) {
-            return false;
+    $finalHtml = '';
+    while (ob_get_level() > 0) {
+        $chunk = (string) ob_get_clean();
+        if (trim($chunk) !== '') {
+            $finalHtml = $chunk;
         }
-        $raw = file_get_contents($bladeFile);
-        if ($raw === false) {
-            return false;
-        }
-        extract($data, EXTR_SKIP);
+    }
 
-        // Konversi sintaks Blade dasar ke PHP murni agar aman di serverless
-        $php = $raw;
-        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
-        $php = preg_replace('/@csrf/i', '<input type="hidden" name="_token" value="">', $php);
-        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
-        $php = preg_replace('/@if\s*\((.+?)\)/', '<?php if ($1): ?>', $php);
-        $php = preg_replace('/@elseif\s*\((.+?)\)/', '<?php elseif ($1): ?>', $php);
-        $php = preg_replace('/@else/i', '<?php else: ?>', $php);
-        $php = preg_replace('/@endif/i', '<?php endif; ?>', $php);
-        $php = preg_replace('/@foreach\s*\((.+?)\)/', '<?php foreach ($1): ?>', $php);
-        $php = preg_replace('/@endforeach/i', '<?php endforeach; ?>', $php);
-        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
-        $php = preg_replace('/\{\{\s*(.+?)\s*\}\}/s', '<?php echo htmlspecialchars((string) ($1), ENT_QUOTES, \'UTF-8\'); ?>', $php);
-
-        $tmpFile = sys_get_temp_dir() . '/view_' . md5($bladeFile) . '.php';
-        file_put_contents($tmpFile, $php);
-
-        ob_start();
-        require $tmpFile;
-        $html = ob_get_clean();
-        echo $html;
-        return true;
-    };
-
-    $uriPath = trim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/', '/');
-    $pageParam = $_GET['page'] ?? $_GET['table'] ?? '';
-
-    // Coba panggil controller ber-namespace App\Http\Controllers
-    $controllers = [
-        'App\\Http\\Controllers\\AuthController',
-        'App\\Http\\Controllers\\DashboardController',
-        'App\\Http\\Controllers\\AbsensiController',
-    ];
-
-    foreach ($controllers as $ctrl) {
-        if (class_exists($ctrl)) {
-            $instance = new $ctrl();
-            foreach (['index', 'login', 'showLoginForm', 'dashboard', 'home'] as $method) {
-                if (method_exists($instance, $method)) {
-                    ob_start();
-                    $result = $instance->$method();
-                    $out = ob_get_clean();
-
-                    if ($out !== false && trim($out) !== '') {
-                        echo $out;
-                        exit;
-                    }
-                    if (is_string($result) && trim($result) !== '') {
-                        echo $result;
-                        exit;
-                    }
-                }
+    if (trim($finalHtml) === '') {
+        foreach (['auth-login', 'dashboard', 'welcome'] as $fallbackName) {
+            if (is_file($rootDir . '/' . $fallbackName . '.blade.php')) {
+                $finalHtml = render_blade_html($fallbackName);
+                break;
             }
         }
     }
 
-    // Fallback tampilkan blade view utama yang tersedia di root
-    $bladeCandidates = [
-        $rootDir . '/auth-login.blade.php',
-        $rootDir . '/dashboard.blade.php',
-        $rootDir . '/welcome.blade.php',
-    ];
-
-    if ($pageParam !== '' && is_file($rootDir . '/' . basename((string) $pageParam) . '-index.blade.php')) {
-        array_unshift($bladeCandidates, $rootDir . '/' . basename((string) $pageParam) . '-index.blade.php');
+    if (!headers_sent()) {
+        header('Content-Type: text/html; charset=utf-8');
+        header('Content-Length: ' . strlen($finalHtml));
     }
+    echo $finalHtml;
+});
 
-    foreach ($bladeCandidates as $blade) {
-        if ($renderBlade($blade)) {
-            exit;
-        }
-    }
-
-    echo '<p>Tidak ada tampilan yang ter-render untuk route <code>' . htmlspecialchars($uriPath ?: '/') . '</code>.</p>';
-    exit;
+// 7. Jalankan app.php jika ada
+$appFile = $rootDir . '/app.php';
+if (is_file($appFile)) {
+    require_once $appFile;
 }
 
-ob_end_flush();
+// 8. Jalankan controller utama jika tersedia
+$controllers = [
+    'App\\Http\\Controllers\\AuthController',
+    'App\\Http\\Controllers\\DashboardController',
+    'App\\Http\\Controllers\\AbsensiController',
+];
+
+foreach ($controllers as $ctrl) {
+    if (class_exists($ctrl)) {
+        $instance = new $ctrl();
+        foreach (['index', 'login', 'showLoginForm', 'dashboard', 'home'] as $method) {
+            if (method_exists($instance, $method)) {
+                $result = $instance->$method();
+                if (is_string($result) && trim($result) !== '') {
+                    echo $result;
+                }
+                exit;
+            }
+        }
+    }
+}
+
+// 9. Fallback render view login
+echo render_blade_html('auth-login');
+exit;
