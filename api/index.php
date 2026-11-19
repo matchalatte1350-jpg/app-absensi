@@ -126,6 +126,39 @@ if (!function_exists('view')) {
         return $html;
     }
 }
+// 3. Helper global view()
+if (!function_exists('view')) {
+    function view(?string $name = null, array $data = [], array $mergeData = []): mixed
+    {
+        if ($name === null) {
+            return array_merge($data, $mergeData);
+        }
+        $html = render_blade_html($name, $data, $mergeData);
+        echo $html;
+        return $html;
+    }
+}
+
+// --- LETAKKAN DI SINI (3b. Helper session() dan old()) ---
+if (!function_exists('session')) {
+    function session(?string $key = null, mixed $default = null): mixed
+    {
+        if ($key === null) {
+            return $_SESSION ?? [];
+        }
+        return $_SESSION[$key] ?? $default;
+    }
+}
+
+if (!function_exists('old')) {
+    function old(string $key, mixed $default = ''): mixed
+    {
+        return $_POST[$key] ?? $default;
+    }
+}
+// --------------------------------------------------------
+
+// 4. Muat konfigurasi / .env jika ada
 
 // 4. Muat konfigurasi / .env jika ada
 foreach ([$rootDir . '/.env', $rootDir . '/env.php', $rootDir . '/config.php'] as $envFile) {
