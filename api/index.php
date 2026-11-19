@@ -116,23 +116,71 @@ if (is_file($appFile)) {
     require $appFile;
     $buffered = ob_get_clean();
 
-    // Jika app.php menghasilkan output langsung, tampilkan
     if ($buffered !== false && trim($buffered) !== '') {
         echo $buffered;
         exit;
     }
 
-    // Coba panggil controller umum jika ada
-    foreach (['AuthController', 'AbsensiController', 'DashboardController', 'HomeController'] as $ctrl) {
+    // Helper render file *.blade.php sederhana tanpa vendor Laravel
+    $renderBlade = function (string $bladeFile, array $data = []) use ($rootDir): bool {
+        if (!is_file($bladeFile)) {
+            return false;
+        }
+        $raw = file_get_contents($bladeFile);
+        if ($raw === false) {
+            return false;
+        }
+        extract($data, EXTR_SKIP);
+
+        // Konversi sintaks Blade dasar ke PHP murni agar aman di serverless
+        $php = $raw;
+        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
+        $php = preg_replace('/@csrf/i', '<input type="hidden" name="_token" value="">', $php);
+        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
+        $php = preg_replace('/@if\s*\((.+?)\)/', '<?php if ($1): ?>', $php);
+        $php = preg_replace('/@elseif\s*\((.+?)\)/', '<?php elseif ($1): ?>', $php);
+        $php = preg_replace('/@else/i', '<?php else: ?>', $php);
+        $php = preg_replace('/@endif/i', '<?php endif; ?>', $php);
+        $php = preg_replace('/@foreach\s*\((.+?)\)/', '<?php foreach ($1): ?>', $php);
+        $php = preg_replace('/@endforeach/i', '<?php endforeach; ?>', $php);
+        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
+        $php = preg_replace('/\{\{\s*(.+?)\s*\}\}/s', '<?php echo htmlspecialchars((string) ($1), ENT_QUOTES, \'UTF-8\'); ?>', $php);
+
+        $tmpFile = sys_get_temp_dir() . '/view_' . md5($bladeFile) . '.php';
+        file_put_contents($tmpFile, $php);
+
+        ob_start();
+        require $tmpFile;
+        $html = ob_get_clean();
+        echo $html;
+        return true;
+    };
+
+    $uriPath = trim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/', '/');
+    $pageParam = $_GET['page'] ?? $_GET['table'] ?? '';
+
+    // Coba panggil controller ber-namespace App\Http\Controllers
+    $controllers = [
+        'App\\Http\\Controllers\\AuthController',
+        'App\\Http\\Controllers\\DashboardController',
+        'App\\Http\\Controllers\\AbsensiController',
+    ];
+
+    foreach ($controllers as $ctrl) {
         if (class_exists($ctrl)) {
             $instance = new $ctrl();
-            foreach (['index', 'login', 'dashboard', 'home'] as $method) {
+            foreach (['index', 'login', 'showLoginForm', 'dashboard', 'home'] as $method) {
                 if (method_exists($instance, $method)) {
                     ob_start();
-                    $instance->$method();
+                    $result = $instance->$method();
                     $out = ob_get_clean();
+
                     if ($out !== false && trim($out) !== '') {
                         echo $out;
+                        exit;
+                    }
+                    if (is_string($result) && trim($result) !== '') {
+                        echo $result;
                         exit;
                     }
                 }
@@ -140,20 +188,24 @@ if (is_file($appFile)) {
         }
     }
 
-    // Jika tetap kosong, tampilkan file PHP & class yang terdeteksi agar bisa langsung dihubungkan
-    $phpFiles = array_map('basename', glob($rootDir . '/*.php') ?: []);
-    $declaredClasses = get_declared_classes();
-    $userClasses = array_slice($declaredClasses, -15);
+    // Fallback tampilkan blade view utama yang tersedia di root
+    $bladeCandidates = [
+        $rootDir . '/auth-login.blade.php',
+        $rootDir . '/dashboard.blade.php',
+        $rootDir . '/welcome.blade.php',
+    ];
 
-    http_response_code(200);
-    header('Content-Type: text/html; charset=utf-8');
-    echo '<div style="font-family:sans-serif;padding:24px;max-width:780px;">';
-    echo '<h3>app.php dimuat, tetapi belum mencetak tampilan HTML.</h3>';
-    echo '<p><strong>Query saat ini:</strong> <code>' . htmlspecialchars($_SERVER['QUERY_STRING'] ?? '-') . '</code></p>';
-    echo '<p><strong>File PHP di root:</strong> <code>' . htmlspecialchars(implode(', ', $phpFiles)) . '</code></p>';
-    echo '<p><strong>Class terdeteksi (terbaru):</strong> <code>' . htmlspecialchars(implode(', ', $userClasses)) . '</code></p>';
-    echo '<p>Kirimkan tangkapan layar info ini (atau isi beberapa baris awal/akhir <code>app.php</code>) agar kita panggil tampilan utamanya.</p>';
-    echo '</div>';
+    if ($pageParam !== '' && is_file($rootDir . '/' . basename((string) $pageParam) . '-index.blade.php')) {
+        array_unshift($bladeCandidates, $rootDir . '/' . basename((string) $pageParam) . '-index.blade.php');
+    }
+
+    foreach ($bladeCandidates as $blade) {
+        if ($renderBlade($blade)) {
+            exit;
+        }
+    }
+
+    echo '<p>Tidak ada tampilan yang ter-render untuk route <code>' . htmlspecialchars($uriPath ?: '/') . '</code>.</p>';
     exit;
 }
 
