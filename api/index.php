@@ -1,7 +1,26 @@
 <?php
 
 declare(strict_types=1);
-
+if (!function_exists('env')) {
+    function env(string $key, $default = null) {
+        $val = getenv($key);
+        if ($val === false && isset($_ENV[$key])) {
+            $val = $_ENV[$key];
+        }
+        if ($val === false && isset($_SERVER[$key])) {
+            $val = $_SERVER[$key];
+        }
+        if ($val === false) {
+            return $default;
+        }
+        $lower = strtolower((string) $val);
+        if ($lower === 'true' || $lower === '(true)') return true;
+        if ($lower === 'false' || $lower === '(false)') return false;
+        if ($lower === 'null' || $lower === '(null)') return null;
+        if ($lower === 'empty' || $lower === '(empty)') return '';
+        return $val;
+    }
+}
 session_start();
 
 $rootDir = dirname(__DIR__);
