@@ -75,24 +75,64 @@ if (!function_exists('render_blade_html')) {
         }
 
         $raw = (string) file_get_contents($targetFile);
+
+        // Siapkan objek $errors aman agar $errors->any() dan $errors->first() tidak error
+        $errorMessages = [];
+        if (isset($merged['error']) && is_string($merged['error']) && $merged['error'] !== '') {
+            $errorMessages[] = $merged['error'];
+        }
+        if (!empty($_SESSION['_errors']) && is_array($_SESSION['_errors'])) {
+            foreach ($_SESSION['_errors'] as $msg) {
+                $errorMessages[] = (string) $msg;
+            }
+        }
+        $errors = new class($errorMessages) {
+            private array $items;
+            public function __construct(array $items) { $this->items = $items; }
+            public function any(): bool { return count($this->items) > 0; }
+            public function first(?string $key = null): string { return $this->items[0] ?? ''; }
+            public function all(): array { return $this->items; }
+        };
+
         extract($merged, EXTR_SKIP);
 
         $php = $raw;
-        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
+        // 1. Komentar Blade
+        $php = preg_replace('/\{\{--[\s\S]*?--\}\}/', '', $php);
+
+        // 2. @csrf dan @method
         $php = preg_replace('/@csrf\b/i', '<input type="hidden" name="_token" value="">', $php);
-        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
-        $php = preg_replace_callback('/@error\s*\(\s*[\'"](.+?)[\'"]\s*\)(.*?)@enderror/is', function ($m) {
+        $php = preg_replace('/@method\s*\(\s*[\'"](.+?)[\'"]\s*\)/i', '<input type="hidden" name="_method" value="$1">', $php);
+
+        // 3. @error ... @enderror
+        $php = preg_replace_callback('/@error\s*\(\s*[\'"](.+?)[\'"]\s*\)([\s\S]*?)@enderror/i', function ($m) {
             return '<?php if (false): ?>' . $m[2] . '<?php endif; ?>';
         }, $php);
-        $php = preg_replace('/@elseif\b([^\r\n]*)/i', '<?php elseif$1: ?>', $php);
-        $php = preg_replace('/@if\b([^\r\n]*)/i', '<?php if$1: ?>', $php);
+
+        // 4. @if, @elseif, @else, @endif (termasuk yang bertingkat/multiline)
+        $php = preg_replace_callback('/@elseif\s*\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)/', function ($m) {
+            return '<?php elseif (' . $m[1] . '): ?>';
+        }, $php);
+        $php = preg_replace_callback('/@if\s*\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)/', function ($m) {
+            return '<?php if (' . $m[1] . '): ?>';
+        }, $php);
         $php = preg_replace('/@else\b/i', '<?php else: ?>', $php);
         $php = preg_replace('/@endif\b/i', '<?php endif; ?>', $php);
-        $php = preg_replace('/@foreach\b([^\r\n]*)/i', '<?php foreach$1: ?>', $php);
+
+        // 5. @foreach ... @endforeach
+        $php = preg_replace_callback('/@foreach\s*\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)/', function ($m) {
+            return '<?php foreach (' . $m[1] . '): ?>';
+        }, $php);
         $php = preg_replace('/@endforeach\b/i', '<?php endforeach; ?>', $php);
-        $php = preg_replace('/@[a-zA-Z0-9_:-]+(?:\s*\([^\r\n]*\))?/m', '', $php);
-        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
-        $php = preg_replace_callback('/\{\{\s*(.+?)\s*\}\}/s', function ($m) {
+
+        // 6. Hapus sisa direktif @lainnya yang tidak dikenali
+        $php = preg_replace('/@[a-zA-Z0-9_:-]+(?:\s*\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))?/', '', $php);
+
+        // 7. Raw echo {!! ... !!} dan escaped echo {{ ... }}
+        $php = preg_replace_callback('/\{\!\!\s*([\s\S]*?)\s*\!\!\}/', function ($m) {
+            return '<?php echo ' . $m[1] . '; ?>';
+        }, $php);
+        $php = preg_replace_callback('/\{\{\s*([\s\S]*?)\s*\}\}/', function ($m) {
             return '<?php echo htmlspecialchars((string) (' . $m[1] . '), ENT_QUOTES, \'UTF-8\'); ?>';
         }, $php);
 
