@@ -28,6 +28,67 @@ if (!function_exists('env')) {
                 return $default;
             }
         }
+        if (!function_exists('view')) {
+    function view(?string $name = null, array $data = [], array $mergeData = [])
+    {
+        $rootDir = dirname(__DIR__);
+        $merged = array_merge($data, $mergeData);
+
+        if ($name === null) {
+            return $merged;
+        }
+
+        $cleanName = str_replace(['.', '/'], '-', trim($name));
+        $candidates = [
+            $rootDir . '/' . $cleanName . '.blade.php',
+            $rootDir . '/' . str_replace('.', '/', trim($name)) . '.blade.php',
+            $rootDir . '/' . basename($cleanName) . '-index.blade.php',
+            $rootDir . '/' . basename($cleanName) . '-login.blade.php',
+            $rootDir . '/' . $cleanName . '.php',
+        ];
+
+        $targetFile = null;
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate)) {
+                $targetFile = $candidate;
+                break;
+            }
+        }
+
+        if ($targetFile === null) {
+            throw new RuntimeException("View '{$name}' tidak ditemukan di root repository.");
+        }
+
+        $raw = file_get_contents($targetFile);
+        if ($raw === false) {
+            throw new RuntimeException("Gagal membaca file view: {$targetFile}");
+        }
+
+        extract($merged, EXTR_SKIP);
+
+        $php = $raw;
+        $php = preg_replace('/\{\{--\s*.*?\s*--\}\}/s', '', $php);
+        $php = preg_replace('/@csrf/i', '<input type="hidden" name="_token" value="">', $php);
+        $php = preg_replace('/@method\([\'"](.+?)[\'"]\)/i', '<input type="hidden" name="_method" value="$1">', $php);
+        $php = preg_replace('/@if\s*\((.+?)\)/', '<?php if ($1): ?>', $php);
+        $php = preg_replace('/@elseif\s*\((.+?)\)/', '<?php elseif ($1): ?>', $php);
+        $php = preg_replace('/@else/i', '<?php else: ?>', $php);
+        $php = preg_replace('/@endif/i', '<?php endif; ?>', $php);
+        $php = preg_replace('/@foreach\s*\((.+?)\)/', '<?php foreach ($1): ?>', $php);
+        $php = preg_replace('/@endforeach/i', '<?php endforeach; ?>', $php);
+        $php = preg_replace('/\{\!\!\s*(.+?)\s*\!\!\}/s', '<?php echo $1; ?>', $php);
+        $php = preg_replace('/\{\{\s*(.+?)\s*\}\}/s', '<?php echo htmlspecialchars((string) ($1), ENT_QUOTES, \'UTF-8\'); ?>', $php);
+
+        $tmpFile = sys_get_temp_dir() . '/blade_' . md5($targetFile) . '.php';
+        file_put_contents($tmpFile, $php);
+
+        ob_start();
+        require $tmpFile;
+        $html = ob_get_clean();
+        echo $html;
+        return $html;
+    }
+}
 
         if (is_string($value)) {
             return match (strtolower($value)) {
