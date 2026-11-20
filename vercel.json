@@ -1,15 +1,28 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/index.php",
-      "use": "vercel-php@0.7.1"
+  "functions": {
+    "api/index.php": {
+      "runtime": "vercel-php@0.7.2"
     }
-  ],
+  },
   "routes": [
+    {
+      "src": "/(css|js|images|build)/(.*)",
+      "dest": "/public/$1/$2"
+    },
     {
       "src": "/(.*)",
       "dest": "/api/index.php"
     }
-  ]
+  ],
+  "env": {
+    "APP_ENV": "production",
+    "APP_DEBUG": "true",
+    "APP_URL": "https://app-absensi-pqvk.vercel.app",
+    "APP_KEY": "ISI_DENGAN_APP_KEY_DARI_FILE_ENV_LOKAL_KAMU",
+    "VIEW_COMPILED_PATH": "/tmp",
+    "CACHE_DRIVER": "array",
+    "LOG_CHANNEL": "stderr",
+    "SESSION_DRIVER": "cookie"
+  }
 }
